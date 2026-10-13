@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>車況管家 Demo</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">車</span><div><b>車況管家</b><small>AI 取還車照片判讀 Demo</small></div></div>
+  <nav id="nav">
+    <a href="#capture" data-page="capture">拍照防呆</a>
+    <a href="#classify" data-page="classify">照片自動分類</a>
+    <a href="#inspect" data-page="inspect">還車判讀</a>
+    <a href="#ops" data-page="ops">營運儀表板</a>
+  </nav>
+  <div id="status" class="status"></div>
+</header>
+<div id="mockbar" class="mockbar" hidden>目前為模擬模式：拍攝面與整潔度為隨機的模擬結果，只用來展示介面。設定 Gemini 金鑰或放入 fine-tune 模型後即為真實判讀。</div>
+
+<main>
+<!-- ================= 1. 拍照防呆 ================= -->
+<section id="page-capture" class="page">
+  <div class="split">
+    <div class="phone">
+      <div class="phone-top"><span id="cap-title">還車拍照</span><span id="cap-progress" class="muted"></span></div>
+      <div id="cap-steps" class="steps"></div>
+      <div class="guide">
+        <svg id="car-diagram" viewBox="0 0 120 200" aria-hidden="true"></svg>
+        <div><div id="cap-target" class="cap-target"></div><div id="cap-hint" class="muted small"></div></div>
+      </div>
+      <div id="cap-preview" class="preview empty"><span>尚未拍攝</span></div>
+      <div id="cap-result" class="result"></div>
+      <div class="phone-actions">
+        <label class="btn primary big"><input id="cap-input" type="file" accept="image/*" capture="environment" hidden>拍照／選擇照片</label>
+        <button id="cap-skip" class="btn ghost">拍不到這一面</button>
+      </div>
+      <div id="cap-skipbox" class="skipbox" hidden>
+        <select id="cap-skip-reason">
+          <option>車輛貼牆停放</option><option>停車格空間太窄</option><option>旁邊有其他車輛或障礙物</option><option>其他</option>
+        </select>
+        <button id="cap-skip-ok" class="btn">確認略過</button>
+      </div>
+      <button id="cap-finish" class="btn primary full" hidden>完成，送出還車判讀</button>
+    </div>
+    <aside class="side">
+      <h3>這一步在做什麼</h3>
+      <p class="muted">用戶每拍一張，系統在 1 秒內檢查以下項目，任一項不通過就當場提示原因、請用戶重拍，而不是等後台人工發現。</p>
+      <ul class="legend-list">
+        <li><b>規則</b>解析度、模糊、亮度、反光、鏡頭髒污</li>
+        <li><b>車輛偵測</b>車有沒有入鏡、太遠或太近（YOLO11n）</li>
+        <li><b>拍攝面分類</b>是不是要求的那一面（fine-tune 模型或 Gemini）</li>
+        <li><b>車牌</b>車牌是否入鏡、是否與訂單車號一致</li>
+      </ul>
+      <label class="field">訂單車號（用來比對車牌，可留白）<input id="cap-carno" placeholder="例：ABC-1234"></label>
+      <h3>判讀細節</h3>
+      <div id="cap-detail" class="muted small">拍照後顯示拍攝面機率分布</div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= 2. 照片自動分類 ================= -->
+<section id="page-classify" class="page">
+  <div class="drop" id="cls-drop">
+    <input id="cls-input" type="file" accept="image/*" multiple hidden>
+    <b>把一批照片拖到這裡，或點擊選擇</b>
+    <span class="muted small">系統會自動分成左前、右前、左後、右後、前車內、後車內、其他。檔名若含原上傳分類（例如 <code>_LF_</code> 或下載器產生的 <code>_1_0.jpg</code>），會標出分類不一致的照片。</span>
+  </div>
+  <div id="cls-summary" class="kpis"></div>
+  <div id="cls-board" class="board"></div>
+</section>
+
+<!-- ================= 3. 還車判讀 ================= -->
+<section id="page-inspect" class="page">
+  <div class="card">
+    <div class="row gap">
+      <label class="field">訂單編號<input id="ins-order" placeholder="自動產生"></label>
+      <label class="field">車號<input id="ins-car" placeholder="例：ABC-1234"></label>
+      <div class="grow"></div>
+      <button id="ins-clear" class="btn ghost">清空</button>
+      <button id="ins-run" class="btn primary">開始判讀</button>
+    </div>
+    <div class="slots" id="ins-slots"></div>
+  </div>
+  <div id="ins-result"></div>
+</section>
+
+<!-- ================= 4. 營運儀表板 ================= -->
+<section id="page-ops" class="page">
+  <div id="ops-kpis" class="kpis"></div>
+  <div class="ops-grid">
+    <div class="card">
+      <h3>分流門檻（由營運決定）</h3>
+      <p class="muted small">異常機率 ≤ 放行上限 → 自動放行；≥ 預警下限 → 預警；中間 → 人工審核。調整後套用到之後的新案件。</p>
+      <label class="field">自動放行上限 <b id="th-pass-v"></b><input id="th-pass" type="range" min="0" max="0.5" step="0.01"></label>
+      <label class="field">預警下限 <b id="th-alert-v"></b><input id="th-alert" type="range" min="0.5" max="1" step="0.01"></label>
+      <button id="th-save" class="btn">套用門檻</button>
+      <div id="th-eff" class="small muted"></div>
+    </div>
+    <div class="card">
+      <h3>自我監控</h3>
+      <div id="mon"></div>
+      <details class="small"><summary>Demo 工具：模擬一批審核回饋</summary>
+        <div class="row gap wrap">
+          <select id="sim-task"><option value="damage">車損</option><option value="cleanliness">整潔度</option><option value="panel">拍攝面</option></select>
+          <label>筆數 <input id="sim-n" type="number" value="20" min="1" max="200" style="width:70px"></label>
+          <label>不一致率 <input id="sim-rate" type="number" value="0.25" min="0" max="1" step="0.05" style="width:70px"></label>
+          <button id="sim-go" class="btn">灌入</button>
+          <button id="reset" class="btn ghost danger">清空所有 demo 資料</button>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="ops-grid">
+    <div class="card">
+      <div class="row"><h3>案件佇列</h3><div class="grow"></div>
+        <div class="seg" id="ops-filter">
+          <button data-r="" class="on">全部</button><button data-r="alert">預警</button><button data-r="review">待審核</button><button data-r="pass">已放行</button>
+        </div>
+      </div>
+      <div id="ops-list" class="list"></div>
+    </div>
+    <div class="card" id="ops-detail"><p class="muted">點選左側案件查看前後對照與 AI 判讀</p></div>
+  </div>
+</section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

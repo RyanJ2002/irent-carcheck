@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+data/
+models/*.onnx
+models/*.json
+models/*_suspects.csv
+irent_images/
+*.xlsx
+.venv/

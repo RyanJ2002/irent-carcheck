@@ -1,0 +1,7 @@
+-r requirements.txt
+torch>=2.2
+torchvision>=0.17
+onnx>=1.15
+pandas>=2.0
+requests>=2.31
+openpyxl>=3.1
